@@ -8,6 +8,7 @@
  *     skills/          unioned with default skills
  *     prompts/         unioned with default prompts
  *     themes/          unioned with default themes
+ *     extensions/      unioned with ~/.pi/agent/extensions (loaded for this profile)
  *     settings.json    kept for the user / other tools (not loaded here)
  *     models.json      kept for the user / other tools (not loaded here)
  *     mcp.json         kept for the user / other tools (not loaded here)
@@ -22,9 +23,12 @@
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { createJiti } from "jiti";
 
 type ProfileExtensionContext = ExtensionContext & {
 	newSession: () => Promise<{ cancelled?: boolean } | undefined>;
@@ -53,6 +57,7 @@ export interface ActiveProfile {
 	skillDir?: string;
 	promptDir?: string;
 	themeDir?: string;
+	extensionDir?: string;
 }
 
 type GlobalStore = typeof globalThis & {
@@ -184,6 +189,123 @@ function optionalDir(dir: string, name: string): string | undefined {
 	return undefined;
 }
 
+function isExtensionFile(name: string): boolean {
+	if (name.startsWith(".") || name.endsWith(".d.ts")) return false;
+	return name.endsWith(".ts") || name.endsWith(".js");
+}
+
+function resolveHostSpecifier(spec: string): string | undefined {
+	try {
+		if (typeof import.meta.resolve === "function") {
+			const resolved = import.meta.resolve(spec);
+			return resolved.startsWith("file:") ? fileURLToPath(resolved) : resolved;
+		}
+	} catch {
+		// fall through to createRequire
+	}
+	try {
+		return createRequire(import.meta.url).resolve(spec);
+	} catch {
+		return undefined;
+	}
+}
+
+function hostAliases(): Record<string, string> {
+	const aliases: Record<string, string> = {};
+	for (const spec of [
+		"@earendil-works/pi-coding-agent",
+		"@earendil-works/pi-agent-core",
+		"@earendil-works/pi-tui",
+		"@earendil-works/pi-ai",
+		"typebox",
+	]) {
+		const resolved = resolveHostSpecifier(spec);
+		if (resolved) aliases[spec] = resolved;
+	}
+	return aliases;
+}
+
+function resolveExtensionEntries(dir: string): string[] | undefined {
+	const packageJsonPath = join(dir, "package.json");
+	if (existsSync(packageJsonPath)) {
+		const raw = readJsonObject(packageJsonPath);
+		const manifest = raw?.pi;
+		if (manifest && typeof manifest === "object" && !Array.isArray(manifest)) {
+			const listed = (manifest as Record<string, unknown>).extensions;
+			if (Array.isArray(listed)) {
+				const entries = listed
+					.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+					.map((item) => join(dir, item))
+					.filter((item) => existsSync(item));
+				if (entries.length > 0) return entries;
+			}
+		}
+	}
+	const indexTs = join(dir, "index.ts");
+	if (existsSync(indexTs)) return [indexTs];
+	const indexJs = join(dir, "index.js");
+	if (existsSync(indexJs)) return [indexJs];
+	return undefined;
+}
+
+/** Same discovery rules as Pi: files in the folder, one-level subdirs with index or pi.extensions. */
+function discoverExtensionsInDir(dir: string): string[] {
+	if (!existsSync(dir)) return [];
+	const discovered: string[] = [];
+	try {
+		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+			const entryPath = join(dir, entry.name);
+			if ((entry.isFile() || entry.isSymbolicLink()) && isExtensionFile(entry.name)) {
+				discovered.push(entryPath);
+				continue;
+			}
+			if (entry.isDirectory() || entry.isSymbolicLink()) {
+				const nested = resolveExtensionEntries(entryPath);
+				if (nested) discovered.push(...nested);
+			}
+		}
+	} catch {
+		return [];
+	}
+	return discovered;
+}
+
+async function importExtensionModule(filePath: string): Promise<{ default?: unknown }> {
+	const jiti = createJiti(import.meta.url, {
+		moduleCache: false,
+		alias: hostAliases(),
+	});
+	return (await jiti.import(filePath)) as { default?: unknown };
+}
+
+async function loadProfileExtensions(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	profile: ActiveProfile,
+): Promise<void> {
+	const extensionDir = profile.extensionDir;
+	if (!extensionDir) return;
+
+	const paths = discoverExtensionsInDir(extensionDir);
+	for (const filePath of paths) {
+		try {
+			const mod = await importExtensionModule(filePath);
+			const factory = mod.default;
+			if (typeof factory !== "function") {
+				ctx.ui.notify(
+					`Profile "${profile.id}": ${filePath} does not export a default factory`,
+					"warning",
+				);
+				continue;
+			}
+			await (factory as (api: ExtensionAPI) => unknown)(pi);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			ctx.ui.notify(`Profile "${profile.id}": failed to load ${filePath}: ${message}`, "error");
+		}
+	}
+}
+
 function loadProfile(id: string): { profile?: ActiveProfile; error?: string } {
 	if (id === RESERVED_DEFAULT) return { profile: undefined };
 	if (!isSafeProfileId(id)) return { error: `Invalid profile name "${id}"` };
@@ -202,6 +324,7 @@ function loadProfile(id: string): { profile?: ActiveProfile; error?: string } {
 			skillDir: optionalDir(dir, "skills"),
 			promptDir: optionalDir(dir, "prompts"),
 			themeDir: optionalDir(dir, "themes"),
+			extensionDir: optionalDir(dir, "extensions"),
 		},
 	};
 }
@@ -370,6 +493,7 @@ function registerSessionHooks(pi: ExtensionAPI, controller: ProfileController): 
 
 		if (!profile) return;
 
+		await loadProfileExtensions(pi, ctx, profile);
 		await applyMetadata(pi, ctx, profile);
 	});
 

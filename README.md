@@ -2,7 +2,7 @@
 
 Pi package for independent agent profiles. Default setup stays in `~/.pi/agent`. Each directory under `~/.pi/agent/profiles/<id>/` is a separate overlay.
 
-Runtime matches Rune’s profile extension (directory overlay, `--profile`, `/profile`, SYSTEM.md replace) without graphs, glyphs, or per-profile extensions.
+Runtime matches Rune’s profile extension (directory overlay, `--profile`, `/profile`, SYSTEM.md replace) without graphs or glyphs. Profile `extensions/` are **unioned** with `~/.pi/agent/extensions/`.
 
 This repo is the **overlay runtime only**. Profile data (`SYSTEM.md`, `profile.json`, extra skills) lives on each machine under `~/.pi/agent/profiles/` and is not distributed here.
 
@@ -49,6 +49,7 @@ Same shape as default Pi. Missing files fall back to Default. Resource directori
   skills/           extra skills
   prompts/          extra prompt templates
   themes/           extra themes
+  extensions/       extra extensions (union with ~/.pi/agent/extensions)
   settings.json     on disk only; this package does not load it
   models.json       on disk only; this package does not load it
   mcp.json          on disk only; this package does not load it
@@ -78,9 +79,15 @@ Missing fields keep Default Pi values.
 
 If present and non-empty, its contents **replace** the system prompt for every turn. Edit the file to tweak; the next turn (or `/reload`) picks it up.
 
+### `extensions/`
+
+Discovered the same way as Pi’s user extensions folder: `*.ts` / `*.js` files, plus one-level subdirectories with `index.ts` / `index.js` or a `package.json` `pi.extensions` list.
+
+They register on the current session **in addition to** `~/.pi/agent/extensions/` and installed packages. Switching profile starts a new session, which reloads the extension runtime, so the previous profile’s extras go away. Default has no profile folder, so only the usual Pi extensions load.
+
 ## Limits
 
-Pi loads `~/.pi/agent/settings.json` and `models.json` before extensions. This package does not replace those files. Profile `extensions/` are not loaded. Sessions stay shared with Default.
+Pi loads `~/.pi/agent/settings.json` and `models.json` before extensions. This package does not replace those files. Profile `mcp.json` is not loaded. Sessions stay shared with Default.
 
 ## License
 
