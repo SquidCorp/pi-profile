@@ -50,9 +50,9 @@ Same shape as default Pi. Missing files fall back to Default. Resource directori
   prompts/          extra prompt templates
   themes/           extra themes
   extensions/       extra extensions (union with ~/.pi/agent/extensions)
+  mcp.json          extra MCP servers (union with ~/.pi/agent/mcp.json)
   settings.json     on disk only; this package does not load it
   models.json       on disk only; this package does not load it
-  mcp.json          on disk only; this package does not load it
 ```
 
 ### `profile.json`
@@ -85,9 +85,15 @@ Discovered the same way as Pi’s user extensions folder: `*.ts` / `*.js` files,
 
 They register on the current session **in addition to** `~/.pi/agent/extensions/` and installed packages. Switching profile starts a new session, which reloads the extension runtime, so the previous profile’s extras go away. Default has no profile folder, so only the usual Pi extensions load.
 
+### `mcp.json`
+
+Same shape as `~/.pi/agent/mcp.json`. Servers are **merged** with the user and project files for that session: default servers stay connected, profile servers are registered on top.
+
+If a profile repeats a name already in `~/.pi/agent/mcp.json` or `.pi/mcp.json` (including `-` vs `_`), the default entry is kept and Pi cannot override it from an extension. Use a new name for a profile-only server. `/profile` new-session drops the extras again.
+
 ## Limits
 
-Pi loads `~/.pi/agent/settings.json` and `models.json` before extensions. This package does not replace those files. Profile `mcp.json` is not loaded. Sessions stay shared with Default.
+Pi loads `~/.pi/agent/settings.json` and `models.json` before extensions. This package does not replace those files. Sessions stay shared with Default.
 
 ## License
 

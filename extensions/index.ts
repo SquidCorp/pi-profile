@@ -11,7 +11,7 @@
  *     extensions/      unioned with ~/.pi/agent/extensions (loaded for this profile)
  *     settings.json    kept for the user / other tools (not loaded here)
  *     models.json      kept for the user / other tools (not loaded here)
- *     mcp.json         kept for the user / other tools (not loaded here)
+ *     mcp.json         unioned with ~/.pi/agent/mcp.json (and .pi/mcp.json)
  *
  * Activation:
  *   pi --profile researcher
@@ -306,6 +306,70 @@ async function loadProfileExtensions(
 	}
 }
 
+function mcpNameKey(name: string): string {
+	return name.replace(/-/g, "_");
+}
+
+function mcpServerNamesFromFile(path: string): Set<string> {
+	const names = new Set<string>();
+	const raw = readJsonObject(path);
+	const servers = raw?.mcpServers;
+	if (!servers || typeof servers !== "object" || Array.isArray(servers)) return names;
+	for (const name of Object.keys(servers)) names.add(mcpNameKey(name));
+	return names;
+}
+
+function defaultMcpNameKeys(cwd: string): Set<string> {
+	const names = mcpServerNamesFromFile(join(getAgentDir(), "mcp.json"));
+	for (const name of mcpServerNamesFromFile(join(cwd, ".pi", "mcp.json"))) {
+		names.add(name);
+	}
+	return names;
+}
+
+function readProfileMcpServers(
+	dir: string,
+): { servers: Record<string, unknown>; error?: string } {
+	const path = join(dir, "mcp.json");
+	if (!existsSync(path)) return { servers: {} };
+	const raw = readJsonObject(path);
+	if (!raw) return { servers: {}, error: `Invalid JSON: ${path}` };
+	if (raw.mcpServers === undefined) return { servers: {} };
+	if (!raw.mcpServers || typeof raw.mcpServers !== "object" || Array.isArray(raw.mcpServers)) {
+		return { servers: {}, error: `Invalid mcpServers in ${path}` };
+	}
+	return { servers: raw.mcpServers as Record<string, unknown> };
+}
+
+function loadProfileMcpServers(pi: ExtensionAPI, ctx: ExtensionContext, profile: ActiveProfile): void {
+	const { servers, error } = readProfileMcpServers(profile.dir);
+	if (error) {
+		ctx.ui.notify(`Profile "${profile.id}": ${error}`, "error");
+		return;
+	}
+
+	const taken = defaultMcpNameKeys(ctx.cwd);
+	for (const [name, config] of Object.entries(servers)) {
+		if (taken.has(mcpNameKey(name))) {
+			ctx.ui.notify(
+				`Profile "${profile.id}": MCP server "${name}" already exists in default mcp.json (kept)`,
+				"warning",
+			);
+			continue;
+		}
+		try {
+			pi.registerMcpServer(name, config as Parameters<ExtensionAPI["registerMcpServer"]>[1]);
+			taken.add(mcpNameKey(name));
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			ctx.ui.notify(
+				`Profile "${profile.id}": failed to register MCP server "${name}": ${message}`,
+				"error",
+			);
+		}
+	}
+}
+
 function loadProfile(id: string): { profile?: ActiveProfile; error?: string } {
 	if (id === RESERVED_DEFAULT) return { profile: undefined };
 	if (!isSafeProfileId(id)) return { error: `Invalid profile name "${id}"` };
@@ -494,6 +558,7 @@ function registerSessionHooks(pi: ExtensionAPI, controller: ProfileController): 
 		if (!profile) return;
 
 		await loadProfileExtensions(pi, ctx, profile);
+		loadProfileMcpServers(pi, ctx, profile);
 		await applyMetadata(pi, ctx, profile);
 	});
 
