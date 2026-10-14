@@ -69,7 +69,7 @@ Same shape as default Pi. Missing files fall back to Default. Resource directori
 | Field | Meaning |
 | --- | --- |
 | `name` | Display name in footer and `/profile` |
-| `description` | Optional blurb; stored only, not injected into the prompt |
+| `description` | Optional blurb; shown in `/profile` completions, not injected into the prompt |
 | `model` | `provider/id`, or a unique model id that contains `/` (OpenRouter-style) |
 | `thinkingLevel` | `off` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max` |
 

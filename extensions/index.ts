@@ -579,6 +579,11 @@ function registerSessionHooks(pi: ExtensionAPI, controller: ProfileController): 
 	});
 }
 
+function completionDescription(id: string): string {
+	if (id === RESERVED_DEFAULT) return "Default ~/.pi/agent setup";
+	return loadMeta(profileDir(id)).meta.description ?? "";
+}
+
 function registerProfileCommand(pi: ExtensionAPI, controller: ProfileController): void {
 	pi.registerCommand("profile", {
 		description: "Show or switch Pi profile (new session)",
@@ -589,7 +594,7 @@ function registerProfileCommand(pi: ExtensionAPI, controller: ProfileController)
 				.map((name) => ({
 					value: name,
 					label: name,
-					description: name === RESERVED_DEFAULT ? "Default ~/.pi/agent setup" : profileDir(name),
+					description: completionDescription(name),
 				}));
 			return items.length > 0 ? items : null;
 		},
