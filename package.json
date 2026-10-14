@@ -1,0 +1,34 @@
+{
+  "name": "pi-profile",
+  "version": "0.1.0",
+  "description": "Independent Pi agent profiles: overlay skills, prompts, themes, SYSTEM.md, and profile.json metadata (Rune-style, no graphs).",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SquidCorp/pi-profile.git"
+  },
+  "homepage": "https://github.com/SquidCorp/pi-profile",
+  "bugs": {
+    "url": "https://github.com/SquidCorp/pi-profile/issues"
+  },
+  "files": [
+    "extensions",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "profiles"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
